@@ -191,8 +191,12 @@ app.post('/v1/messages', async (req, res) => {
         // Ensure account manager is initialized
         await ensureInitialized();
 
-        // Optimistic Retry: Reset all local rate limits to force a fresh check on Google's side
-        accountManager.resetAllRateLimits();
+        // Optimistic Retry: If ALL accounts are rate-limited, reset them to force a fresh check.
+        // If we have some available accounts, we try them first.
+        if (accountManager.isAllRateLimited()) {
+            console.log('[Server] All accounts rate-limited. Resetting state for optimistic retry.');
+            accountManager.resetAllRateLimits();
+        }
 
         const {
             model,
