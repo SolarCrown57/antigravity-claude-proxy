@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Antigravity Claude Proxy</title>
+    <script>
+        (function() {
+            var isLoggedIn = localStorage.getItem('authToken');
+            var currentTab = localStorage.getItem('currentTab') || 'accounts';
+            var classes = ['auth-ready'];
+            if (isLoggedIn) classes.push('logged-in');
+            if (currentTab === 'settings') classes.push('tab-settings');
+            document.documentElement.className = classes.join(' ');
+            if ('fonts' in document) {
+                document.fonts.ready.then(function() {
+                    document.documentElement.classList.add('fonts-loaded');
+                });
+            } else {
+                setTimeout(function() {
+                    document.documentElement.classList.add('fonts-loaded');
+                }, 1000);
+            }
+        })();
+    </script>
+    <style>
+html:not(.auth-ready) #loginForm,
+html:not(.auth-ready) #mainContent { visibility: hidden; }
+.logged-in #loginForm { display: none !important; }
+.logged-in #mainContent { display: flex !important; }
+html:not(.logged-in) #mainContent { display: none !important; }
+html.tab-settings #accountsPage { display: none !important; }
+html.tab-settings #settingsPage { display: block !important; }
+html.tab-settings .tab[data-tab="accounts"] {
+    background: transparent !important;
+    color: var(--text-light, #888) !important;
+}
+html.tab-settings .tab[data-tab="settings"] {
+    background: var(--primary, #6366f1) !important;
+    color: white !important;
+}
+    </style>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    </noscript>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="loginForm" class="login-form">
+            <h2>Antigravity Claude Proxy</h2>
+            <form id="login">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" required autocomplete="current-password">
+                </div>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+
+        <!-- Main Content -->
+        <div id="mainContent" class="main-content hidden">
+            <div class="header">
+                <div class="tabs">
+                    <button class="tab active" data-tab="accounts" onclick="switchTab('accounts')">Accounts</button>
+                    <button class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</button>
+                </div>
+                <div class="header-right">
+                    <span class="server-info" id="serverInfo">Loading...</span>
+                    <button onclick="logout()">Logout</button>
+                </div>
+            </div>
+            <div class="content">
+                <!-- Accounts Page -->
+                <div id="accountsPage">
+                    <!-- Stats + Actions -->
+                    <div class="top-bar">
+                        <div class="stats-inline">
+                            <div class="stat-item clickable active" onclick="filterAccounts('all')">
+                                <span class="stat-num" id="totalAccounts">0</span>
+                                <span class="stat-text">Total</span>
+                            </div>
+                            <div class="stat-item success clickable" onclick="filterAccounts('available')">
+                                <span class="stat-num" id="availableAccounts">0</span>
+                                <span class="stat-text">Available</span>
+                            </div>
+                            <div class="stat-item warning clickable" onclick="filterAccounts('rateLimited')">
+                                <span class="stat-num" id="rateLimitedAccounts">0</span>
+                                <span class="stat-text">Limited</span>
+                            </div>
+                            <div class="stat-item danger clickable" onclick="filterAccounts('invalid')">
+                                <span class="stat-num" id="invalidAccounts">0</span>
+                                <span class="stat-text">Invalid</span>
+                            </div>
+                        </div>
+                        <div class="action-btns">
+                            <button type="button" onclick="showOAuthModal()" class="btn btn-success btn-sm">OAuth</button>
+                            <button type="button" onclick="loadAccounts()" class="btn btn-warning btn-sm">Refresh</button>
+                            <button type="button" onclick="resetAllRateLimits()" class="btn btn-info btn-sm" title="Reset all rate limits">Reset Limits</button>
+                        </div>
+                    </div>
+
+                    <!-- Account Grid -->
+                    <div id="accountList" class="account-grid">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">No accounts</div>
+                            <div class="empty-state-text">No accounts configured</div>
+                            <div class="empty-state-hint">Click OAuth button above to add an account</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Page -->
+                <div id="settingsPage" class="hidden">
+                    <div class="config-grid">
+                        <!-- Server Status -->
+                        <div class="config-section">
+                            <h4>Server Status</h4>
+                            <div class="status-grid" id="serverStatus">
+                                <div class="status-item">
+                                    <span class="status-label">Status</span>
+                                    <span class="status-value" id="statusValue">Loading...</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Port</span>
+                                    <span class="status-value" id="portValue">-</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Uptime</span>
+                                    <span class="status-value" id="uptimeValue">-</span>
+                                </div>
+                            </div>
+                            <div class="config-actions" style="margin-top: 1rem;">
+                                <button type="button" onclick="refreshTokens()" class="btn btn-warning">Force Token Refresh</button>
+                                <button type="button" onclick="loadServerStatus()" class="btn btn-secondary">Reload Status</button>
+                            </div>
+                        </div>
+
+                        <!-- Account Quotas -->
+                        <div class="config-section">
+                            <h4>Account Quotas</h4>
+                            <div id="quotaDisplay" class="quota-container">
+                                <div class="quota-loading">Loading quotas...</div>
+                            </div>
+                            <div class="config-actions" style="margin-top: 1rem;">
+                                <button type="button" onclick="loadQuotas()" class="btn btn-info">Load Quotas</button>
+                            </div>
+                        </div>
+
+                        <!-- Admin Settings -->
+                        <div class="config-section">
+                            <h4>Admin Settings</h4>
+                            <form id="adminForm">
+                                <div class="form-group compact">
+                                    <label>Admin Username</label>
+                                    <input type="text" name="ADMIN_USERNAME" placeholder="admin">
+                                </div>
+                                <div class="form-group compact">
+                                    <label>Admin Password</label>
+                                    <input type="password" name="ADMIN_PASSWORD" placeholder="Leave empty to keep current">
+                                </div>
+                                <div class="config-actions">
+                                    <button type="submit" class="btn btn-success">Save Settings</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js" defer></script>
+    <script src="js/ui.js" defer></script>
+    <script src="js/auth.js" defer></script>
+    <script src="js/accounts.js" defer></script>
+    <script src="js/config.js" defer></script>
+    <script src="js/main.js" defer></script>
+</body>
+</html>

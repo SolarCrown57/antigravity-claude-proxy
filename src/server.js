@@ -6,16 +6,25 @@
 
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { sendMessage, sendMessageStream, listModels, getModelQuotas } from './cloudcode-client.js';
 import { forceRefresh } from './token-extractor.js';
 import { REQUEST_BODY_LIMIT } from './constants.js';
 import { AccountManager } from './account-manager.js';
 import { formatDuration } from './utils/helpers.js';
+import adminRouter, { setAccountManager } from './routes/admin.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 
 // Initialize account manager (will be fully initialized on first request or startup)
 const accountManager = new AccountManager();
+
+// Share account manager with admin routes
+setAccountManager(accountManager);
 
 // Track initialization status
 let isInitialized = false;
@@ -51,6 +60,13 @@ async function ensureInitialized() {
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+
+// Serve static files for admin panel
+const publicDir = join(__dirname, '..', 'public');
+app.use(express.static(publicDir));
+
+// Admin API routes
+app.use('/admin', adminRouter);
 
 /**
  * Parse error message to extract error type, status code, and user-friendly message

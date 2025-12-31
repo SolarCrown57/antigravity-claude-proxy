@@ -335,6 +335,68 @@ export async function completeOAuthFlow(code, verifier) {
     };
 }
 
+/**
+ * Exchange authorization code for tokens (without PKCE - for web GUI)
+ * Used when the user manually pastes the callback URL
+ *
+ * @param {string} code - Authorization code from OAuth callback
+ * @param {string} redirectUri - The redirect URI used in the authorization request
+ * @returns {Promise<{email: string, refreshToken: string, source: string, addedAt: number}>} Account info
+ */
+export async function authenticateWithCode(code, redirectUri) {
+    // Exchange code for tokens (without PKCE verifier)
+    const response = await fetch(OAUTH_CONFIG.tokenUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+            client_id: OAUTH_CONFIG.clientId,
+            client_secret: OAUTH_CONFIG.clientSecret,
+            code: code,
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        console.error('[OAuth] Token exchange failed:', response.status, error);
+        throw new Error(`Token exchange failed: ${error}`);
+    }
+
+    const tokens = await response.json();
+
+    if (!tokens.access_token) {
+        console.error('[OAuth] No access token in response:', tokens);
+        throw new Error('No access token received');
+    }
+
+    if (!tokens.refresh_token) {
+        console.error('[OAuth] No refresh token in response:', tokens);
+        throw new Error('No refresh token received. Make sure to use prompt=consent in the authorization URL.');
+    }
+
+    // Get user email
+    const email = await getUserEmail(tokens.access_token);
+
+    // Discover project ID
+    const projectId = await discoverProjectId(tokens.access_token);
+
+    return {
+        email,
+        refreshToken: tokens.refresh_token,
+        source: 'oauth',
+        projectId,
+        addedAt: Date.now(),
+        isRateLimited: false,
+        rateLimitResetTime: null,
+        isInvalid: false,
+        invalidReason: null,
+        lastUsed: null
+    };
+}
+
 export default {
     getAuthorizationUrl,
     startCallbackServer,
@@ -342,5 +404,6 @@ export default {
     refreshAccessToken,
     getUserEmail,
     discoverProjectId,
-    completeOAuthFlow
+    completeOAuthFlow,
+    authenticateWithCode
 };

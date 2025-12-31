@@ -16,11 +16,15 @@ app.listen(PORT, () => {
 ║                                                              ║
 ║  Server running at: http://localhost:${PORT}                   ║
 ║                                                              ║
-║  Endpoints:                                                  ║
+║  Admin Panel:                                                ║
+║    http://localhost:${PORT}                                    ║
+║    Default login: admin / admin                              ║
+║                                                              ║
+║  API Endpoints:                                              ║
 ║    POST /v1/messages  - Anthropic Messages API               ║
 ║    GET  /v1/models    - List available models                ║
 ║    GET  /health       - Health check                         ║
-║    GET  /account-limits - Account status & quotas              ║
+║    GET  /account-limits - Account status & quotas            ║
 ║    POST /refresh-token - Force token refresh                 ║
 ║                                                              ║
 ║  Usage with Claude Code:                                     ║
@@ -29,11 +33,8 @@ app.listen(PORT, () => {
 ║    claude                                                    ║
 ║                                                              ║
 ║  Add Google accounts:                                        ║
-║    npm run accounts                                          ║
-║                                                              ║
-║  Prerequisites (if no accounts configured):                  ║
-║    - Antigravity must be running                             ║
-║    - Have a chat panel open in Antigravity                   ║
+║    npm run accounts  (CLI)                                   ║
+║    or use the Admin Panel above                              ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
   `);
