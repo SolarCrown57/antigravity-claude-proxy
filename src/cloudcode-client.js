@@ -288,7 +288,7 @@ export async function sendMessage(anthropicRequest, accountManager) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         // Use sticky account selection for cache continuity
-        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount();
+        const { account: stickyAccount, waitMs } = await accountManager.pickStickyAccount();
         let account = stickyAccount;
 
         // Handle waiting for sticky account
@@ -296,7 +296,7 @@ export async function sendMessage(anthropicRequest, accountManager) {
             console.log(`[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`);
             await sleep(waitMs);
             accountManager.clearExpiredLimits();
-            account = accountManager.getCurrentStickyAccount();
+            account = await accountManager.getCurrentStickyAccount();
         }
 
         // Handle all accounts rate-limited
@@ -317,7 +317,7 @@ export async function sendMessage(anthropicRequest, accountManager) {
                 console.log(`[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(allWaitMs)}...`);
                 await sleep(allWaitMs);
                 accountManager.clearExpiredLimits();
-                account = accountManager.pickNext();
+                account = await accountManager.pickNext();
             }
 
             if (!account) {
@@ -552,7 +552,7 @@ export async function* sendMessageStream(anthropicRequest, accountManager) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         // Use sticky account selection for cache continuity
-        const { account: stickyAccount, waitMs } = accountManager.pickStickyAccount();
+        const { account: stickyAccount, waitMs } = await accountManager.pickStickyAccount();
         let account = stickyAccount;
 
         // Handle waiting for sticky account
@@ -560,7 +560,7 @@ export async function* sendMessageStream(anthropicRequest, accountManager) {
             console.log(`[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`);
             await sleep(waitMs);
             accountManager.clearExpiredLimits();
-            account = accountManager.getCurrentStickyAccount();
+            account = await accountManager.getCurrentStickyAccount();
         }
 
         // Handle all accounts rate-limited
@@ -581,7 +581,7 @@ export async function* sendMessageStream(anthropicRequest, accountManager) {
                 console.log(`[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(allWaitMs)}...`);
                 await sleep(allWaitMs);
                 accountManager.clearExpiredLimits();
-                account = accountManager.pickNext();
+                account = await accountManager.pickNext();
             }
 
             if (!account) {

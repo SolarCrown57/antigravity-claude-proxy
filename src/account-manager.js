@@ -191,9 +191,9 @@ export class AccountManager {
     /**
      * Pick the next available account (fallback when current is unavailable).
      * Sets activeIndex to the selected account's index.
-     * @returns {Object|null} The next available account or null if none available
+     * @returns {Promise<Object|null>} The next available account or null if none available
      */
-    pickNext() {
+    async pickNext() {
         this.clearExpiredLimits();
 
         const available = this.getAvailableAccounts();
@@ -220,8 +220,8 @@ export class AccountManager {
                 const total = this.#accounts.length;
                 console.log(`[AccountManager] Using account: ${account.email} (${position}/${total})`);
 
-                // Persist the change (don't await to avoid blocking)
-                this.saveToDisk();
+                // Persist the change - await to ensure state is saved
+                await this.saveToDisk();
 
                 return account;
             }
@@ -233,9 +233,9 @@ export class AccountManager {
     /**
      * Get the current account without advancing the index (sticky selection).
      * Used for cache continuity - sticks to the same account until rate-limited.
-     * @returns {Object|null} The current account or null if unavailable/rate-limited
+     * @returns {Promise<Object|null>} The current account or null if unavailable/rate-limited
      */
-    getCurrentStickyAccount() {
+    async getCurrentStickyAccount() {
         this.clearExpiredLimits();
 
         if (this.#accounts.length === 0) {
@@ -253,8 +253,8 @@ export class AccountManager {
         // Return if available
         if (account && !account.isRateLimited && !account.isInvalid) {
             account.lastUsed = Date.now();
-            // Persist the change (don't await to avoid blocking)
-            this.saveToDisk();
+            // Persist the change - await to ensure state is saved
+            await this.saveToDisk();
             return account;
         }
 
@@ -300,11 +300,11 @@ export class AccountManager {
      * Prefers the current account for cache continuity, only switches when:
      * - Current account is rate-limited for > 2 minutes
      * - Current account is invalid
-     * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
+     * @returns {Promise<{account: Object|null, waitMs: number}>} Account to use and optional wait time
      */
-    pickStickyAccount() {
+    async pickStickyAccount() {
         // First try to get the current sticky account
-        const stickyAccount = this.getCurrentStickyAccount();
+        const stickyAccount = await this.getCurrentStickyAccount();
         if (stickyAccount) {
             return { account: stickyAccount, waitMs: 0 };
         }
@@ -317,7 +317,7 @@ export class AccountManager {
         }
 
         // Current account unavailable for too long, switch to next available
-        const nextAccount = this.pickNext();
+        const nextAccount = await this.pickNext();
         if (nextAccount) {
             console.log(`[AccountManager] Switched to new account for cache: ${nextAccount.email}`);
         }
@@ -545,34 +545,49 @@ export class AccountManager {
      * @returns {Promise<void>}
      */
     async saveToDisk() {
-        try {
-            // Ensure directory exists
-            const dir = dirname(this.#configPath);
-            await mkdir(dir, { recursive: true });
+        const maxRetries = 3;
+        let lastError = null;
 
-            const config = {
-                accounts: this.#accounts.map(acc => ({
-                    email: acc.email,
-                    source: acc.source,
-                    dbPath: acc.dbPath || null,
-                    refreshToken: acc.source === 'oauth' ? acc.refreshToken : undefined,
-                    apiKey: acc.source === 'manual' ? acc.apiKey : undefined,
-                    projectId: acc.projectId || undefined,
-                    addedAt: acc.addedAt || undefined,
-                    isRateLimited: acc.isRateLimited,
-                    rateLimitResetTime: acc.rateLimitResetTime,
-                    isInvalid: acc.isInvalid || false,
-                    invalidReason: acc.invalidReason || null,
-                    lastUsed: acc.lastUsed
-                })),
-                settings: this.#settings,
-                activeIndex: this.#currentIndex
-            };
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Ensure directory exists
+                const dir = dirname(this.#configPath);
+                await mkdir(dir, { recursive: true });
 
-            await writeFile(this.#configPath, JSON.stringify(config, null, 2));
-        } catch (error) {
-            console.error('[AccountManager] Failed to save config:', error.message);
+                const config = {
+                    accounts: this.#accounts.map(acc => ({
+                        email: acc.email,
+                        source: acc.source,
+                        dbPath: acc.dbPath || null,
+                        refreshToken: acc.source === 'oauth' ? acc.refreshToken : undefined,
+                        apiKey: acc.source === 'manual' ? acc.apiKey : undefined,
+                        projectId: acc.projectId || undefined,
+                        addedAt: acc.addedAt || undefined,
+                        isRateLimited: acc.isRateLimited,
+                        rateLimitResetTime: acc.rateLimitResetTime,
+                        isInvalid: acc.isInvalid || false,
+                        invalidReason: acc.invalidReason || null,
+                        lastUsed: acc.lastUsed
+                    })),
+                    settings: this.#settings,
+                    activeIndex: this.#currentIndex
+                };
+
+                await writeFile(this.#configPath, JSON.stringify(config, null, 2));
+                return; // Success, exit
+            } catch (error) {
+                lastError = error;
+                console.error(`[AccountManager] Failed to save config (attempt ${attempt}/${maxRetries}):`, error.message);
+
+                if (attempt < maxRetries) {
+                    // Wait before retry (exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+                }
+            }
         }
+
+        // All retries failed
+        console.error('[AccountManager] Failed to save config after all retries:', lastError?.message);
     }
 
     /**

@@ -11,6 +11,10 @@ import { GEMINI_SIGNATURE_CACHE_TTL_MS } from '../constants.js';
 
 const signatureCache = new Map();
 
+// Periodic cleanup interval (run every 5 minutes)
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+let cleanupIntervalId = null;
+
 /**
  * Store a signature for a tool_use_id
  * @param {string} toolUseId - The tool use ID
@@ -22,6 +26,9 @@ export function cacheSignature(toolUseId, signature) {
         signature,
         timestamp: Date.now()
     });
+
+    // Start periodic cleanup if not already running
+    startPeriodicCleanup();
 }
 
 /**
@@ -49,10 +56,43 @@ export function getCachedSignature(toolUseId) {
  */
 export function cleanupCache() {
     const now = Date.now();
+    let cleaned = 0;
     for (const [key, entry] of signatureCache) {
         if (now - entry.timestamp > GEMINI_SIGNATURE_CACHE_TTL_MS) {
             signatureCache.delete(key);
+            cleaned++;
         }
+    }
+
+    // Stop periodic cleanup if cache is empty
+    if (signatureCache.size === 0) {
+        stopPeriodicCleanup();
+    }
+
+    if (cleaned > 0) {
+        console.log(`[SignatureCache] Cleaned up ${cleaned} expired entries, ${signatureCache.size} remaining`);
+    }
+}
+
+/**
+ * Start periodic cleanup timer
+ */
+function startPeriodicCleanup() {
+    if (cleanupIntervalId !== null) return;
+    cleanupIntervalId = setInterval(cleanupCache, CLEANUP_INTERVAL_MS);
+    // Unref the timer so it doesn't prevent process exit
+    if (cleanupIntervalId.unref) {
+        cleanupIntervalId.unref();
+    }
+}
+
+/**
+ * Stop periodic cleanup timer
+ */
+function stopPeriodicCleanup() {
+    if (cleanupIntervalId !== null) {
+        clearInterval(cleanupIntervalId);
+        cleanupIntervalId = null;
     }
 }
 

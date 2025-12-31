@@ -47,8 +47,13 @@ export function convertGoogleToAnthropic(googleResponse, model) {
             }
         } else if (part.functionCall) {
             // Convert functionCall to tool_use
-            // Use the id from the response if available, otherwise generate one
-            const toolId = part.functionCall.id || `toolu_${crypto.randomBytes(12).toString('hex')}`;
+            // Use the id from the response if available, otherwise generate a deterministic one
+            // based on function name and args to ensure consistent caching across requests
+            let toolId = part.functionCall.id;
+            if (!toolId) {
+                const hashInput = `${part.functionCall.name}:${JSON.stringify(part.functionCall.args || {})}`;
+                toolId = `toolu_${crypto.createHash('sha256').update(hashInput).digest('hex').slice(0, 24)}`;
+            }
             const toolUseBlock = {
                 type: 'tool_use',
                 id: toolId,
