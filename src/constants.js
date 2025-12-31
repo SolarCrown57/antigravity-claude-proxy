@@ -92,6 +92,34 @@ export const GEMINI_MAX_OUTPUT_TOKENS = 16384;
 // See: https://ai.google.dev/gemini-api/docs/thought-signatures
 export const GEMINI_SKIP_SIGNATURE = 'skip_thought_signature_validator';
 
+// Model redirections for unsupported models
+// Maps model patterns to supported alternatives
+const MODEL_REDIRECTS = {
+    // Haiku models are not available on Cloud Code, redirect to Gemini Flash Lite
+    'haiku': 'gemini-2.5-flash-lite-preview-06-17'
+};
+
+/**
+ * Map a model name to an alternative if the original is not supported.
+ * @param {string} modelName - The original model name from the request
+ * @returns {string} The mapped model name (or original if no mapping needed)
+ */
+export function mapModelName(modelName) {
+    if (!modelName) return modelName;
+
+    const lower = modelName.toLowerCase();
+
+    // Check each redirect pattern
+    for (const [pattern, replacement] of Object.entries(MODEL_REDIRECTS)) {
+        if (lower.includes(pattern)) {
+            console.log(`[Model] Redirecting ${modelName} → ${replacement}`);
+            return replacement;
+        }
+    }
+
+    return modelName;
+}
+
 // Cache TTL for Gemini thoughtSignatures (2 hours)
 export const GEMINI_SIGNATURE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -164,6 +192,7 @@ export default {
     GEMINI_SIGNATURE_CACHE_TTL_MS,
     getModelFamily,
     isThinkingModel,
+    mapModelName,
     OAUTH_CONFIG,
     OAUTH_REDIRECT_URI
 };
