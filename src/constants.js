@@ -96,13 +96,18 @@ export const GEMINI_SKIP_SIGNATURE = 'skip_thought_signature_validator';
 // Maps model patterns to supported alternatives
 const MODEL_REDIRECTS = {
     // Haiku models are not available on Cloud Code, redirect to Gemini Flash Lite
-    'haiku': 'gemini-2.5-flash-lite-preview-06-17'
+    'haiku': 'gemini-2.5-flash-lite'
 };
+
+// Model name normalization patterns
+// Removes date suffixes from model names (e.g., claude-sonnet-4-5-20250929 → claude-sonnet-4-5)
+const MODEL_DATE_SUFFIX_REGEX = /-\d{8}$/;
 
 /**
  * Map a model name to an alternative if the original is not supported.
+ * Also normalizes model names by removing date suffixes.
  * @param {string} modelName - The original model name from the request
- * @returns {string} The mapped model name (or original if no mapping needed)
+ * @returns {string} The mapped model name (or normalized original if no mapping needed)
  */
 export function mapModelName(modelName) {
     if (!modelName) return modelName;
@@ -115,6 +120,13 @@ export function mapModelName(modelName) {
             console.log(`[Model] Redirecting ${modelName} → ${replacement}`);
             return replacement;
         }
+    }
+
+    // Normalize model names by removing date suffixes (e.g., -20250929)
+    if (MODEL_DATE_SUFFIX_REGEX.test(modelName)) {
+        const normalized = modelName.replace(MODEL_DATE_SUFFIX_REGEX, '');
+        console.log(`[Model] Normalizing ${modelName} → ${normalized}`);
+        return normalized;
     }
 
     return modelName;
