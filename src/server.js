@@ -75,10 +75,10 @@ app.use('/admin', adminRouter);
 const openaiRouter = createOpenAIRouter(accountManager);
 const geminiRouter = createGeminiRouter(accountManager);
 
-// Mount OpenAI routes under /v1 (but after Claude routes to avoid conflicts)
+// Mount OpenAI routes under /v1
 // OpenAI chat completions: /v1/chat/completions
-// OpenAI models: /v1/models (separate from Claude /v1/models)
-app.use('/v1/chat', openaiRouter);
+// OpenAI models: /v1/models (handled by openaiRouter)
+app.use('/v1', openaiRouter);
 
 // Mount Gemini routes under /v1beta
 // Gemini generateContent: /v1beta/models/:model:generateContent
