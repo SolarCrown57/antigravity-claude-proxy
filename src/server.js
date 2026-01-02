@@ -8,7 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { sendMessage, sendMessageStream, listModels, getModelQuotas } from './cloudcode-client.js';
+import { sendMessage, sendMessageStream, sendMessageStreamWithSearch, listModels, getModelQuotas } from './cloudcode-client.js';
 import { forceRefresh } from './token-extractor.js';
 import { REQUEST_BODY_LIMIT } from './constants.js';
 import { AccountManager } from './account-manager.js';
@@ -506,8 +506,8 @@ app.post('/v1/messages', async (req, res) => {
             res.flushHeaders();
 
             try {
-                // Use the streaming generator with account manager
-                for await (const event of sendMessageStream(request, accountManager)) {
+                // Use the streaming generator with web search support
+                for await (const event of sendMessageStreamWithSearch(request, accountManager)) {
                     res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
                     // Flush after each event for real-time streaming
                     if (res.flush) res.flush();

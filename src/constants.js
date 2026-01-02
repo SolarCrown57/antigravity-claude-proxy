@@ -188,6 +188,28 @@ export const OAUTH_CONFIG = {
 };
 export const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CONFIG.callbackPort}/oauth-callback`;
 
+// Web search configuration for handling web_search_20250305 tool calls locally
+// Since Google Cloud Code doesn't support this tool, we intercept and execute locally
+export const SEARCH_CONFIG = {
+    // Search provider: 'serper' | 'bing' | 'duckduckgo'
+    // DuckDuckGo is free but may have rate limits
+    // Serper.dev and Bing require API keys
+    provider: process.env.SEARCH_PROVIDER || 'duckduckgo',
+
+    // API keys for paid providers (set via environment variables)
+    serperApiKey: process.env.SERPER_API_KEY || null,
+    bingApiKey: process.env.BING_API_KEY || null,
+
+    // Maximum number of search results to return
+    maxResults: parseInt(process.env.SEARCH_MAX_RESULTS, 10) || 10,
+
+    // Whether to enable web search interception
+    enabled: process.env.ENABLE_WEB_SEARCH !== 'false'
+};
+
+// Web search tool name (Anthropic's web search tool identifier)
+export const WEB_SEARCH_TOOL_NAME = 'web_search_20250305';
+
 export default {
     DATA_DIR,
     ANTIGRAVITY_ENDPOINT_FALLBACKS,
@@ -211,5 +233,7 @@ export default {
     isThinkingModel,
     mapModelName,
     OAUTH_CONFIG,
-    OAUTH_REDIRECT_URI
+    OAUTH_REDIRECT_URI,
+    SEARCH_CONFIG,
+    WEB_SEARCH_TOOL_NAME
 };

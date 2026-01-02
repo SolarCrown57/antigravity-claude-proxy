@@ -18,7 +18,9 @@ import {
     MIN_SIGNATURE_LENGTH,
     getModelFamily,
     isThinkingModel,
-    mapModelName
+    mapModelName,
+    SEARCH_CONFIG,
+    WEB_SEARCH_TOOL_NAME
 } from './constants.js';
 import {
     convertAnthropicToGoogle,
@@ -27,6 +29,13 @@ import {
 import { cacheSignature } from './format/signature-cache.js';
 import { formatDuration, sleep } from './utils/helpers.js';
 import { isRateLimitError, isAuthError } from './errors.js';
+import {
+    hasWebSearchTool,
+    filterWebSearchTool,
+    executeWebSearch,
+    buildToolUseBlock,
+    buildToolResultMessage
+} from './utils/web-search-handler.js';
 
 /**
  * Check if an error is a rate limit error (429 or RESOURCE_EXHAUSTED)
@@ -223,7 +232,15 @@ function parseResetTime(responseOrError, errorText = '') {
 function buildCloudCodeRequest(anthropicRequest, projectId) {
     // Map model name to supported alternative if needed (e.g., haiku → gemini-2.5-flash-lite)
     const model = mapModelName(anthropicRequest.model);
-    const googleRequest = convertAnthropicToGoogle(anthropicRequest);
+
+    // Filter out web_search tool before converting to Google format
+    // Google Cloud Code doesn't support this tool - we handle it locally
+    const filteredRequest = {
+        ...anthropicRequest,
+        tools: filterWebSearchTool(anthropicRequest.tools)
+    };
+
+    const googleRequest = convertAnthropicToGoogle(filteredRequest);
 
     // Use stable session ID derived from first user message for cache continuity
     googleRequest.sessionId = deriveSessionId(anthropicRequest);
@@ -1305,9 +1322,186 @@ export async function sendRawMessageStream(payload, accountManager) {
     throw new Error('Max retries exceeded');
 }
 
+/**
+ * Send a streaming request with web search interception support
+ * This wrapper handles web_search_20250305 tool calls by:
+ * 1. Detecting web_search tool calls in the stream
+ * 2. Executing the search locally
+ * 3. Resuming the conversation with search results
+ *
+ * @param {Object} anthropicRequest - The Anthropic-format request
+ * @param {import('./account-manager.js').default} accountManager - The account manager instance
+ * @yields {Object} Anthropic-format SSE events
+ */
+export async function* sendMessageStreamWithSearch(anthropicRequest, accountManager) {
+    // Check if web search is enabled and the request has web_search tool
+    const shouldHandleWebSearch = SEARCH_CONFIG.enabled && hasWebSearchTool(anthropicRequest);
+
+    if (!shouldHandleWebSearch) {
+        // No web search tool or disabled, use regular streaming
+        yield* sendMessageStream(anthropicRequest, accountManager);
+        return;
+    }
+
+    console.log('[CloudCode] Web search tool detected, enabling interception...');
+
+    // Internal loop to handle potential multiple web search calls
+    let currentRequest = anthropicRequest;
+    let searchLoopCount = 0;
+    const MAX_SEARCH_LOOPS = 5; // Prevent infinite loops
+
+    while (searchLoopCount < MAX_SEARCH_LOOPS) {
+        searchLoopCount++;
+
+        // Accumulate events to detect web_search and build assistant content
+        const accumulatedEvents = [];
+        const accumulatedContentBlocks = [];
+        let webSearchToolCall = null;
+        let currentBlockIndex = -1;
+        let currentBlockType = null;
+        let currentBlockContent = {};
+        let messageStartEvent = null;
+        let isWebSearchBlock = false;
+        let webSearchJsonBuffer = '';
+
+        // Stream and monitor for web_search
+        for await (const event of sendMessageStream(currentRequest, accountManager)) {
+            // Capture message_start
+            if (event.type === 'message_start') {
+                messageStartEvent = event;
+            }
+
+            // Detect content block start
+            if (event.type === 'content_block_start') {
+                currentBlockIndex = event.index;
+                currentBlockType = event.content_block?.type;
+                currentBlockContent = { ...event.content_block };
+
+                // Check if this is a web_search tool call
+                if (currentBlockType === 'tool_use' && event.content_block?.name === WEB_SEARCH_TOOL_NAME) {
+                    isWebSearchBlock = true;
+                    webSearchJsonBuffer = '';
+                    console.log(`[CloudCode] Detected web_search tool call, intercepting...`);
+                    // Don't yield this event - we'll handle it locally
+                    continue;
+                }
+
+                isWebSearchBlock = false;
+            }
+
+            // Accumulate tool use JSON for web_search
+            if (isWebSearchBlock && event.type === 'content_block_delta') {
+                if (event.delta?.type === 'input_json_delta') {
+                    webSearchJsonBuffer += event.delta.partial_json || '';
+                }
+                // Don't yield delta events for web_search tool
+                continue;
+            }
+
+            // Handle web_search block stop
+            if (isWebSearchBlock && event.type === 'content_block_stop') {
+                // Parse the accumulated JSON
+                let searchArgs = {};
+                try {
+                    if (webSearchJsonBuffer) {
+                        searchArgs = JSON.parse(webSearchJsonBuffer);
+                    }
+                } catch (e) {
+                    console.log('[CloudCode] Failed to parse web_search args:', e.message);
+                }
+
+                webSearchToolCall = {
+                    functionCall: {
+                        id: currentBlockContent.id || `toolu_${crypto.randomBytes(12).toString('hex')}`,
+                        name: WEB_SEARCH_TOOL_NAME,
+                        args: searchArgs
+                    }
+                };
+
+                // Don't yield this stop event
+                isWebSearchBlock = false;
+                continue;
+            }
+
+            // Track completed content blocks for assistant message reconstruction
+            if (event.type === 'content_block_stop' && !isWebSearchBlock) {
+                if (currentBlockContent) {
+                    accumulatedContentBlocks.push(currentBlockContent);
+                }
+            }
+
+            // Accumulate content for thinking blocks
+            if (event.type === 'content_block_delta' && currentBlockType === 'thinking') {
+                if (event.delta?.type === 'thinking_delta') {
+                    currentBlockContent.thinking = (currentBlockContent.thinking || '') + (event.delta.thinking || '');
+                }
+                if (event.delta?.type === 'signature_delta') {
+                    currentBlockContent.signature = event.delta.signature;
+                }
+            }
+
+            // Accumulate content for text blocks
+            if (event.type === 'content_block_delta' && currentBlockType === 'text') {
+                if (event.delta?.type === 'text_delta') {
+                    currentBlockContent.text = (currentBlockContent.text || '') + (event.delta.text || '');
+                }
+            }
+
+            // Store all events
+            accumulatedEvents.push(event);
+
+            // Yield the event to the client
+            yield event;
+        }
+
+        // Check if we intercepted a web_search call
+        if (webSearchToolCall) {
+            console.log('[CloudCode] Executing local web search...');
+
+            // Execute the search
+            const searchResult = await executeWebSearch(webSearchToolCall);
+
+            // Build assistant message content (thinking + text blocks so far + tool_use)
+            const assistantContent = [];
+
+            // Add accumulated content blocks
+            for (const block of accumulatedContentBlocks) {
+                assistantContent.push(block);
+            }
+
+            // Add the web_search tool_use block
+            assistantContent.push(buildToolUseBlock(webSearchToolCall, searchResult.toolId));
+
+            // Build tool_result message
+            const toolResultMessage = buildToolResultMessage(searchResult.toolId, searchResult.formattedResults);
+
+            // Build the new request with search results
+            currentRequest = {
+                ...anthropicRequest,
+                messages: [
+                    ...currentRequest.messages,
+                    { role: 'assistant', content: assistantContent },
+                    toolResultMessage
+                ]
+            };
+
+            console.log(`[CloudCode] Resuming conversation with search results (loop ${searchLoopCount})...`);
+
+            // Continue the loop to process the resumed response
+            continue;
+        }
+
+        // No web_search detected, stream completed normally
+        return;
+    }
+
+    console.log('[CloudCode] Max search loops reached, stopping');
+}
+
 export default {
     sendMessage,
     sendMessageStream,
+    sendMessageStreamWithSearch,
     sendRawMessage,
     sendRawMessageStream,
     listModels,
