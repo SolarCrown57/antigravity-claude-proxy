@@ -29,16 +29,6 @@ html:not(.auth-ready) #mainContent { visibility: hidden; }
 .logged-in #loginForm { display: none !important; }
 .logged-in #mainContent { display: flex !important; }
 html:not(.logged-in) #mainContent { display: none !important; }
-html.tab-settings #accountsPage { display: none !important; }
-html.tab-settings #settingsPage { display: block !important; }
-html.tab-settings .tab[data-tab="accounts"] {
-    background: transparent !important;
-    color: var(--text-light, #888) !important;
-}
-html.tab-settings .tab[data-tab="settings"] {
-    background: var(--primary, #6366f1) !important;
-    color: white !important;
-}
     </style>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
@@ -84,19 +74,19 @@ html.tab-settings .tab[data-tab="settings"] {
                     <!-- Stats + Actions -->
                     <div class="top-bar">
                         <div class="stats-inline">
-                            <div class="stat-item clickable active" onclick="filterAccounts('all')">
+                            <div class="stat-item clickable active" onclick="filterAccounts('all')" title="Total Accounts">
                                 <span class="stat-num" id="totalAccounts">0</span>
                                 <span class="stat-text">Total</span>
                             </div>
-                            <div class="stat-item success clickable" onclick="filterAccounts('available')">
+                            <div class="stat-item success clickable" onclick="filterAccounts('available')" title="Available Accounts">
                                 <span class="stat-num" id="availableAccounts">0</span>
                                 <span class="stat-text">Available</span>
                             </div>
-                            <div class="stat-item warning clickable" onclick="filterAccounts('rateLimited')">
+                            <div class="stat-item warning clickable" onclick="filterAccounts('rateLimited')" title="Rate Limited Accounts">
                                 <span class="stat-num" id="rateLimitedAccounts">0</span>
                                 <span class="stat-text">Limited</span>
                             </div>
-                            <div class="stat-item danger clickable" onclick="filterAccounts('invalid')">
+                            <div class="stat-item danger clickable" onclick="filterAccounts('invalid')" title="Invalid Accounts">
                                 <span class="stat-num" id="invalidAccounts">0</span>
                                 <span class="stat-text">Invalid</span>
                             </div>
@@ -104,11 +94,13 @@ html.tab-settings .tab[data-tab="settings"] {
                         <div class="action-btns">
                             <button type="button" onclick="showOAuthModal()" class="btn btn-success btn-sm">OAuth</button>
                             <button type="button" onclick="showManualAddModal()" class="btn btn-primary btn-sm">Add Token</button>
+                            <div class="divider-vertical" style="width:1px; background:var(--border); margin:0 4px;"></div>
                             <button type="button" onclick="exportConfig()" class="btn btn-secondary btn-sm">Export</button>
                             <button type="button" onclick="document.getElementById('importFile').click()" class="btn btn-secondary btn-sm">Import</button>
                             <input type="file" id="importFile" accept=".json" style="display: none" onchange="importConfig(this)">
-                            <button type="button" onclick="loadAccounts()" class="btn btn-warning btn-sm">Refresh</button>
-                            <button type="button" onclick="resetAllRateLimits()" class="btn btn-info btn-sm" title="Reset all rate limits">Reset Limits</button>
+                            <div class="divider-vertical" style="width:1px; background:var(--border); margin:0 4px;"></div>
+                            <button type="button" onclick="loadAccounts()" class="btn btn-secondary btn-sm" title="Refresh list">Refresh</button>
+                            <button type="button" onclick="resetAllRateLimits()" class="btn btn-warning btn-sm" title="Reset all rate limits">Reset Limits</button>
                         </div>
                     </div>
 
@@ -127,7 +119,7 @@ html.tab-settings .tab[data-tab="settings"] {
                     <div class="config-grid">
                         <!-- Server Status -->
                         <div class="config-section">
-                            <h4>Server Status</h4>
+                            <h4>Status</h4>
                             <div class="status-grid" id="serverStatus">
                                 <div class="status-item">
                                     <span class="status-label">Status</span>
@@ -150,29 +142,29 @@ html.tab-settings .tab[data-tab="settings"] {
 
                         <!-- Account Quotas -->
                         <div class="config-section">
-                            <h4>Account Quotas</h4>
+                            <h4>Quotas</h4>
                             <div id="quotaDisplay" class="quota-container">
                                 <div class="quota-loading">Loading quotas...</div>
                             </div>
                             <div class="config-actions" style="margin-top: 1rem;">
-                                <button type="button" onclick="loadQuotas()" class="btn btn-info">Load Quotas</button>
+                                <button type="button" onclick="loadQuotas()" class="btn btn-secondary btn-sm">Load Quotas</button>
                             </div>
                         </div>
 
                         <!-- Admin Settings -->
                         <div class="config-section">
-                            <h4>Admin Settings</h4>
+                            <h4>Admin</h4>
                             <form id="adminForm">
                                 <div class="form-group compact">
-                                    <label>Admin Username</label>
+                                    <label>Username</label>
                                     <input type="text" name="ADMIN_USERNAME" placeholder="admin">
                                 </div>
                                 <div class="form-group compact">
-                                    <label>Admin Password</label>
+                                    <label>Password</label>
                                     <input type="password" name="ADMIN_PASSWORD" placeholder="Leave empty to keep current">
                                 </div>
                                 <div class="config-actions">
-                                    <button type="submit" class="btn btn-success">Save Settings</button>
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
                                 </div>
                             </form>
                         </div>
