@@ -64,11 +64,15 @@ export const REQUEST_BODY_LIMIT = '50mb';
 export const ANTIGRAVITY_AUTH_PORT = 9092;
 export const DEFAULT_PORT = 8080;
 
-// Multi-account configuration
-export const ACCOUNT_CONFIG_PATH = join(
+// Data directory for persistent storage (Docker/Zeabur friendly)
+// Priority: DATA_DIR env var > default user config path
+export const DATA_DIR = process.env.DATA_DIR || join(
     homedir(),
-    '.config/antigravity-proxy/accounts.json'
+    '.config/antigravity-proxy'
 );
+
+// Multi-account configuration
+export const ACCOUNT_CONFIG_PATH = join(DATA_DIR, 'accounts.json');
 
 // Antigravity app database path (for legacy single-account token extraction)
 // Uses platform-specific path detection
@@ -185,6 +189,7 @@ export const OAUTH_CONFIG = {
 export const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CONFIG.callbackPort}/oauth-callback`;
 
 export default {
+    DATA_DIR,
     ANTIGRAVITY_ENDPOINT_FALLBACKS,
     ANTIGRAVITY_HEADERS,
     DEFAULT_PROJECT_ID,

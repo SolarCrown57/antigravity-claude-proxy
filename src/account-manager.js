@@ -432,8 +432,8 @@ export class AccountManager {
                 this.markInvalid(account.email, error.message);
                 throw new Error(`AUTH_INVALID: ${account.email}: ${error.message}`);
             }
-        } else if (account.source === 'manual' && account.apiKey) {
-            token = account.apiKey;
+        } else if (account.source === 'manual' && (account.apiKey || account.accessToken)) {
+            token = account.apiKey || account.accessToken;
         } else {
             // Extract from database
             const dbPath = account.dbPath || ANTIGRAVITY_DB_PATH;
@@ -538,6 +538,15 @@ export class AccountManager {
         } else {
             this.#tokenCache.clear();
         }
+    }
+
+    /**
+     * Clear all token and project caches
+     */
+    clearAllTokenCaches() {
+        this.#tokenCache.clear();
+        this.#projectCache.clear();
+        console.log('[AccountManager] Cleared all token and project caches');
     }
 
     /**

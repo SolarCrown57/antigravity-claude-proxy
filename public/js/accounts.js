@@ -274,3 +274,193 @@ async function resetAllRateLimits() {
         }
     }
 }
+
+// ============================================
+// Manual Token Add
+// ============================================
+
+function showManualAddModal() {
+    document.getElementById('manualAddModal').style.display = 'flex';
+    document.getElementById('manualAddForm').reset();
+}
+
+function closeManualAddModal() {
+    document.getElementById('manualAddModal').style.display = 'none';
+}
+
+async function submitManualAdd(event) {
+    event.preventDefault();
+
+    const email = document.getElementById('manualEmail').value.trim();
+    const accessToken = document.getElementById('manualAccessToken').value.trim();
+    const refreshToken = document.getElementById('manualRefreshToken').value.trim();
+    const projectId = document.getElementById('manualProjectId').value.trim();
+
+    if (!accessToken) {
+        showToast('Access token is required', 'error');
+        return;
+    }
+
+    showLoading('Adding account...');
+    try {
+        const response = await authFetch('/admin/accounts/manual', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: email || undefined,
+                accessToken,
+                refreshToken: refreshToken || undefined,
+                projectId: projectId || undefined
+            })
+        });
+
+        const data = await response.json();
+        hideLoading();
+
+        if (data.success) {
+            showToast('Account added successfully', 'success');
+            closeManualAddModal();
+            loadAccounts();
+        } else {
+            showToast(data.message || 'Failed to add account', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        if (error.message !== 'Unauthorized') {
+            showToast('Failed to add account: ' + error.message, 'error');
+        }
+    }
+}
+
+// ============================================
+// Export / Import Configuration
+// ============================================
+
+async function exportConfig() {
+    showLoading('Exporting...');
+    try {
+        const response = await authFetch('/admin/settings/export', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        const data = await response.json();
+        hideLoading();
+
+        // Trigger download
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `antigravity-accounts-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast(`Exported ${data.accounts?.length || 0} account(s)`, 'success');
+    } catch (error) {
+        hideLoading();
+        if (error.message !== 'Unauthorized') {
+            showToast('Export failed: ' + error.message, 'error');
+        }
+    }
+}
+
+let pendingImportData = null;
+
+async function importConfig(inputElement) {
+    const file = inputElement.files[0];
+    if (!file) return;
+
+    // Reset the input so the same file can be selected again
+    inputElement.value = '';
+
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (!data.accounts || !Array.isArray(data.accounts)) {
+            showToast('Invalid import file: missing accounts array', 'error');
+            return;
+        }
+
+        // Show preview
+        pendingImportData = data;
+        showImportPreview(data);
+    } catch (error) {
+        showToast('Failed to parse import file: ' + error.message, 'error');
+    }
+}
+
+function showImportPreview(data) {
+    const previewContainer = document.getElementById('importPreview');
+    const accounts = data.accounts || [];
+
+    if (accounts.length === 0) {
+        previewContainer.innerHTML = '<div class="empty-state-text">No accounts found in file</div>';
+    } else {
+        previewContainer.innerHTML = accounts.map(acc => `
+            <div class="import-preview-item">
+                <span class="import-preview-email">${escapeHtml(acc.email || 'Unknown')}</span>
+                <span class="import-preview-source">${escapeHtml(acc.source || 'import')}</span>
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('importMerge').checked = true;
+    document.getElementById('importPreviewModal').style.display = 'flex';
+}
+
+function closeImportPreviewModal() {
+    document.getElementById('importPreviewModal').style.display = 'none';
+    pendingImportData = null;
+}
+
+async function confirmImport() {
+    if (!pendingImportData) {
+        showToast('No import data', 'error');
+        return;
+    }
+
+    const merge = document.getElementById('importMerge').checked;
+    closeImportPreviewModal();
+
+    showLoading('Importing...');
+    try {
+        const response = await authFetch('/admin/settings/import', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                accounts: pendingImportData.accounts,
+                merge
+            })
+        });
+
+        const data = await response.json();
+        hideLoading();
+
+        if (data.success) {
+            showToast(data.message || 'Import successful', 'success');
+            loadAccounts();
+        } else {
+            showToast(data.message || 'Import failed', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        if (error.message !== 'Unauthorized') {
+            showToast('Import failed: ' + error.message, 'error');
+        }
+    }
+
+    pendingImportData = null;
+}

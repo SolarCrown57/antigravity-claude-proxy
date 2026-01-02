@@ -103,6 +103,10 @@ html.tab-settings .tab[data-tab="settings"] {
                         </div>
                         <div class="action-btns">
                             <button type="button" onclick="showOAuthModal()" class="btn btn-success btn-sm">OAuth</button>
+                            <button type="button" onclick="showManualAddModal()" class="btn btn-primary btn-sm">Add Token</button>
+                            <button type="button" onclick="exportConfig()" class="btn btn-secondary btn-sm">Export</button>
+                            <button type="button" onclick="document.getElementById('importFile').click()" class="btn btn-secondary btn-sm">Import</button>
+                            <input type="file" id="importFile" accept=".json" style="display: none" onchange="importConfig(this)">
                             <button type="button" onclick="loadAccounts()" class="btn btn-warning btn-sm">Refresh</button>
                             <button type="button" onclick="resetAllRateLimits()" class="btn btn-info btn-sm" title="Reset all rate limits">Reset Limits</button>
                         </div>
@@ -174,6 +178,54 @@ html.tab-settings .tab[data-tab="settings"] {
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Add Token Modal -->
+    <div id="manualAddModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeManualAddModal()"></div>
+        <div class="modal-content">
+            <h3>Add Token Manually</h3>
+            <form id="manualAddForm" onsubmit="submitManualAdd(event)">
+                <div class="form-group">
+                    <label>Email / Label (optional)</label>
+                    <input type="text" id="manualEmail" placeholder="user@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Access Token *</label>
+                    <textarea id="manualAccessToken" rows="4" placeholder="Paste your access token here..." required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Refresh Token (optional)</label>
+                    <textarea id="manualRefreshToken" rows="3" placeholder="Paste refresh token for auto-refresh..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Project ID (optional)</label>
+                    <input type="text" id="manualProjectId" placeholder="auto-detect if empty">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" onclick="closeManualAddModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-success">Add Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Import Preview Modal -->
+    <div id="importPreviewModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeImportPreviewModal()"></div>
+        <div class="modal-content">
+            <h3>Import Accounts</h3>
+            <div id="importPreview" class="import-preview"></div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="importMerge"> Merge with existing accounts
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeImportPreviewModal()" class="btn btn-secondary">Cancel</button>
+                <button type="button" onclick="confirmImport()" class="btn btn-success">Import</button>
             </div>
         </div>
     </div>
