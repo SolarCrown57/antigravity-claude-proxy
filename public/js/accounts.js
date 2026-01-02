@@ -430,6 +430,7 @@ async function confirmImport() {
     }
 
     const merge = document.getElementById('importMerge').checked;
+    const importAccounts = pendingImportData.accounts; // Save before closing modal
     closeImportPreviewModal();
 
     showLoading('Importing...');
@@ -441,7 +442,7 @@ async function confirmImport() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                accounts: pendingImportData.accounts,
+                accounts: importAccounts,
                 merge
             })
         });
