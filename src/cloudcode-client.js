@@ -1039,9 +1039,277 @@ export async function getModelQuotas(token) {
     return quotas;
 }
 
+/**
+ * Send a raw Google/Antigravity format request (non-streaming)
+ * This is a lower-level function that accepts pre-converted payloads
+ * Used by OpenAI and Gemini route handlers
+ *
+ * @param {Object} payload - Pre-converted Antigravity format payload
+ * @param {import('./account-manager.js').default} accountManager - The account manager instance
+ * @param {Object} options - Additional options
+ * @param {boolean} options.useSSE - Force SSE endpoint even for non-streaming
+ * @returns {Promise<{response: Response, account: Object}>} Raw response and account used
+ * @throws {Error} If max retries exceeded or no accounts available
+ */
+export async function sendRawMessage(payload, accountManager, options = {}) {
+    const model = payload.model;
+    const isThinking = isThinkingModel(model);
+    const useSSE = options.useSSE ?? isThinking;
+
+    const maxAttempts = Math.max(MAX_RETRIES, accountManager.getAccountCount() + 1);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const { account: stickyAccount, waitMs } = await accountManager.pickStickyAccount();
+        let account = stickyAccount;
+
+        if (!account && waitMs > 0) {
+            console.log(`[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`);
+            await sleep(waitMs);
+            accountManager.clearExpiredLimits();
+            account = await accountManager.getCurrentStickyAccount();
+        }
+
+        if (!account) {
+            if (accountManager.isAllRateLimited()) {
+                const allWaitMs = accountManager.getMinWaitTimeMs();
+                const resetTime = new Date(Date.now() + allWaitMs).toISOString();
+
+                if (allWaitMs > MAX_WAIT_BEFORE_ERROR_MS) {
+                    throw new Error(
+                        `RESOURCE_EXHAUSTED: Rate limited. Quota will reset after ${formatDuration(allWaitMs)}. Next available: ${resetTime}`
+                    );
+                }
+
+                const accountCount = accountManager.getAccountCount();
+                console.log(`[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(allWaitMs)}...`);
+                await sleep(allWaitMs);
+                accountManager.clearExpiredLimits();
+                account = await accountManager.pickNext();
+            }
+
+            if (!account) {
+                throw new Error('No accounts available');
+            }
+        }
+
+        try {
+            const token = await accountManager.getTokenForAccount(account);
+
+            // Update payload with project if needed
+            if (!payload.project) {
+                const project = await accountManager.getProjectForAccount(account, token);
+                payload.project = project;
+            }
+
+            console.log(`[CloudCode] Sending raw request for model: ${model}`);
+
+            let lastError = null;
+            for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+                try {
+                    const url = useSSE
+                        ? `${endpoint}/v1internal:streamGenerateContent?alt=sse`
+                        : `${endpoint}/v1internal:generateContent`;
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: buildHeaders(token, model, useSSE ? 'text/event-stream' : 'application/json'),
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.log(`[CloudCode] Error at ${endpoint}: ${response.status} - ${errorText}`);
+
+                        if (response.status === 401) {
+                            accountManager.clearTokenCache(account.email);
+                            accountManager.clearProjectCache(account.email);
+                            continue;
+                        }
+
+                        if (response.status === 429) {
+                            console.log(`[CloudCode] Rate limited at ${endpoint}, trying next endpoint...`);
+                            const resetMs = parseResetTime(response, errorText);
+                            if (!lastError?.is429 || (resetMs && (!lastError.resetMs || resetMs < lastError.resetMs))) {
+                                lastError = { is429: true, response, errorText, resetMs };
+                            }
+                            continue;
+                        }
+
+                        if (response.status >= 400) {
+                            lastError = new Error(`API error ${response.status}: ${errorText}`);
+                            continue;
+                        }
+                    }
+
+                    return { response, account };
+
+                } catch (endpointError) {
+                    if (is429Error(endpointError)) {
+                        throw endpointError;
+                    }
+                    console.log(`[CloudCode] Error at ${endpoint}:`, endpointError.message);
+                    lastError = endpointError;
+                }
+            }
+
+            if (lastError) {
+                if (lastError.is429) {
+                    console.log(`[CloudCode] All endpoints rate-limited for ${account.email}`);
+                    accountManager.markRateLimited(account.email, lastError.resetMs);
+                    throw new Error(`Rate limited: ${lastError.errorText}`);
+                }
+                throw lastError;
+            }
+
+        } catch (error) {
+            if (is429Error(error)) {
+                console.log(`[CloudCode] Account ${account.email} rate-limited, trying next...`);
+                continue;
+            }
+            if (isAuthInvalidError(error)) {
+                console.log(`[CloudCode] Account ${account.email} has invalid credentials, trying next...`);
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    throw new Error('Max retries exceeded');
+}
+
+/**
+ * Send a raw Google/Antigravity format request (streaming)
+ * Returns the raw response stream for the caller to process
+ *
+ * @param {Object} payload - Pre-converted Antigravity format payload
+ * @param {import('./account-manager.js').default} accountManager - The account manager instance
+ * @returns {Promise<{response: Response, account: Object}>} Raw response and account used
+ * @throws {Error} If max retries exceeded or no accounts available
+ */
+export async function sendRawMessageStream(payload, accountManager) {
+    const model = payload.model;
+
+    const maxAttempts = Math.max(MAX_RETRIES, accountManager.getAccountCount() + 1);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const { account: stickyAccount, waitMs } = await accountManager.pickStickyAccount();
+        let account = stickyAccount;
+
+        if (!account && waitMs > 0) {
+            console.log(`[CloudCode] Waiting ${formatDuration(waitMs)} for sticky account...`);
+            await sleep(waitMs);
+            accountManager.clearExpiredLimits();
+            account = await accountManager.getCurrentStickyAccount();
+        }
+
+        if (!account) {
+            if (accountManager.isAllRateLimited()) {
+                const allWaitMs = accountManager.getMinWaitTimeMs();
+                const resetTime = new Date(Date.now() + allWaitMs).toISOString();
+
+                if (allWaitMs > MAX_WAIT_BEFORE_ERROR_MS) {
+                    throw new Error(
+                        `RESOURCE_EXHAUSTED: Rate limited. Quota will reset after ${formatDuration(allWaitMs)}. Next available: ${resetTime}`
+                    );
+                }
+
+                const accountCount = accountManager.getAccountCount();
+                console.log(`[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(allWaitMs)}...`);
+                await sleep(allWaitMs);
+                accountManager.clearExpiredLimits();
+                account = await accountManager.pickNext();
+            }
+
+            if (!account) {
+                throw new Error('No accounts available');
+            }
+        }
+
+        try {
+            const token = await accountManager.getTokenForAccount(account);
+
+            if (!payload.project) {
+                const project = await accountManager.getProjectForAccount(account, token);
+                payload.project = project;
+            }
+
+            console.log(`[CloudCode] Starting raw stream for model: ${model}`);
+
+            let lastError = null;
+            for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+                try {
+                    const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: buildHeaders(token, model, 'text/event-stream'),
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.log(`[CloudCode] Stream error at ${endpoint}: ${response.status} - ${errorText}`);
+
+                        if (response.status === 401) {
+                            accountManager.clearTokenCache(account.email);
+                            accountManager.clearProjectCache(account.email);
+                            continue;
+                        }
+
+                        if (response.status === 429) {
+                            console.log(`[CloudCode] Stream rate limited at ${endpoint}, trying next endpoint...`);
+                            const resetMs = parseResetTime(response, errorText);
+                            if (!lastError?.is429 || (resetMs && (!lastError.resetMs || resetMs < lastError.resetMs))) {
+                                lastError = { is429: true, response, errorText, resetMs };
+                            }
+                            continue;
+                        }
+
+                        lastError = new Error(`API error ${response.status}: ${errorText}`);
+                        continue;
+                    }
+
+                    return { response, account };
+
+                } catch (endpointError) {
+                    if (is429Error(endpointError)) {
+                        throw endpointError;
+                    }
+                    console.log(`[CloudCode] Stream error at ${endpoint}:`, endpointError.message);
+                    lastError = endpointError;
+                }
+            }
+
+            if (lastError) {
+                if (lastError.is429) {
+                    console.log(`[CloudCode] All endpoints rate-limited for ${account.email}`);
+                    accountManager.markRateLimited(account.email, lastError.resetMs);
+                    throw new Error(`Rate limited: ${lastError.errorText}`);
+                }
+                throw lastError;
+            }
+
+        } catch (error) {
+            if (is429Error(error)) {
+                console.log(`[CloudCode] Account ${account.email} rate-limited, trying next...`);
+                continue;
+            }
+            if (isAuthInvalidError(error)) {
+                console.log(`[CloudCode] Account ${account.email} has invalid credentials, trying next...`);
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    throw new Error('Max retries exceeded');
+}
+
 export default {
     sendMessage,
     sendMessageStream,
+    sendRawMessage,
+    sendRawMessageStream,
     listModels,
     fetchAvailableModels,
     getModelQuotas

@@ -14,6 +14,8 @@ import { REQUEST_BODY_LIMIT } from './constants.js';
 import { AccountManager } from './account-manager.js';
 import { formatDuration } from './utils/helpers.js';
 import adminRouter, { setAccountManager } from './routes/admin.js';
+import { createOpenAIRouter } from './routes/openai.js';
+import { createGeminiRouter } from './routes/gemini.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,6 +69,22 @@ app.use(express.static(publicDir));
 
 // Admin API routes
 app.use('/admin', adminRouter);
+
+// OpenAI-compatible routes (mounted after account manager is available)
+// These will be initialized after ensureInitialized() is called
+const openaiRouter = createOpenAIRouter(accountManager);
+const geminiRouter = createGeminiRouter(accountManager);
+
+// Mount OpenAI routes under /v1 (but after Claude routes to avoid conflicts)
+// OpenAI chat completions: /v1/chat/completions
+// OpenAI models: /v1/models (separate from Claude /v1/models)
+app.use('/v1/chat', openaiRouter);
+
+// Mount Gemini routes under /v1beta
+// Gemini generateContent: /v1beta/models/:model:generateContent
+// Gemini streamGenerateContent: /v1beta/models/:model:streamGenerateContent
+// Gemini models: /v1beta/models
+app.use('/v1beta', geminiRouter);
 
 /**
  * Parse error message to extract error type, status code, and user-friendly message
